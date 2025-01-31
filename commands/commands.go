@@ -93,7 +93,7 @@ func NewCommandKafka() *CommandsKafka {
 
 func (c *CommandsKafka) TopicVerify(client sarama.Client) error {
 	c.topicList.topicList(client)
-	// c.topicGenerateNewDestPart.topicGenerateNewDestPart()
+	c.topicGenerateNewDestPart.topicGenerateNewDestPart()
 	// c.topicVerifyNewDestPart.topicVerifyNewDestPart(client)
 	return nil
 
