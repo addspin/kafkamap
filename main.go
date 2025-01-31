@@ -14,6 +14,10 @@ import (
 	"github.com/xdg-go/scram"
 )
 
+func init() {
+	sarama.Logger = log.New(os.Stdout, "[Sarama] ", log.LstdFlags|log.Lshortfile)
+}
+
 func main() {
 
 	viper.SetConfigFile("config.yaml")
@@ -23,31 +27,13 @@ func main() {
 
 	config := sarama.NewConfig()
 	config.Version = sarama.V3_9_0_0
+	config.ClientID = "kafkamap-client"
 
 	// Настройка SASL PLAIN аутентификации
 	config.Net.SASL.Enable = viper.GetBool("kafka.sasl.enabled")
-	// if viper.GetString("kafka.sasl.mechanism") == "PLAIN" {
-	config.Net.SASL.Mechanism = sarama.SASLMechanism(viper.GetString("kafka.sasl.mechanism"))
-	// }
-
-	// Настройка SCRAM аутентификации
-	// if viper.GetString("kafka.sasl.mechanism") == "SCRAM-SHA-256" {
-	// 	config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
-	// 		return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
-	// 	}
-	// 	config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
-	// }
-	// if viper.GetString("kafka.sasl.mechanism") == "SCRAM-SHA-512" {
-	// 	config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
-	// 		return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
-	// 	}
-	// 	config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
-	// } else {
-	// 	log.Fatalf("Неверный алгоритм SHA \"%s\": должен быть \"SCRAM-SHA-256\" или \"SCRAM-SHA-512\"", viper.GetString("kafka.sasl.mechanism"))
-	// }
-
 	config.Net.SASL.User = viper.GetString("kafka.sasl.username")
 	config.Net.SASL.Password = viper.GetString("kafka.sasl.password")
+	config.Net.SASL.Mechanism = sarama.SASLMechanism(viper.GetString("kafka.sasl.mechanism"))
 
 	// Указываем протокол безопасности
 	config.Net.TLS.Enable = viper.GetBool("kafka.tls.enabled")
@@ -61,22 +47,57 @@ func main() {
 	// Адреса брокеров из вашего кластера
 	brokers := viper.GetStringSlice("kafka.broker")
 
+	// Настройка SASL аутентификации
+	log.Printf("Настройка SASL механизма: %s", viper.GetString("kafka.sasl.mechanism"))
+	switch viper.GetString("kafka.sasl.mechanism") {
+	case "PLAIN":
+		log.Printf("Настройка PLAIN аутентификации")
+		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
+		config.Net.SASL.SCRAMClientGeneratorFunc = nil // Очищаем SCRAM конфигурацию для PLAIN
+		log.Printf("SASL конфигурация: Enable=%v, User=%s, Handshake=%v",
+			config.Net.SASL.Enable,
+			config.Net.SASL.User,
+			config.Net.SASL.Handshake)
+	case "SCRAM-SHA-256":
+		log.Printf("Настройка SCRAM-SHA-256 аутентификации")
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
+		}
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+	case "SCRAM-SHA-512":
+		log.Printf("Настройка SCRAM-SHA-512 аутентификации")
+		config.Net.SASL.SCRAMClientGeneratorFunc = func() sarama.SCRAMClient {
+			return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
+		}
+		config.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+	default:
+		log.Fatalf("Неподдерживаемый механизм SASL \"%s\": должен быть \"PLAIN\", \"SCRAM-SHA-256\" или \"SCRAM-SHA-512\"",
+			viper.GetString("kafka.sasl.mechanism"))
+	}
+
 	var client sarama.Client
 	var err error
 
 	// Функция для создания клиента
 	createClient := func() error {
+		log.Printf("Попытка подключения к брокерам: %v", brokers)
+		log.Printf("Текущая конфигурация: SASL=%v, TLS=%v, Mechanism=%v",
+			config.Net.SASL.Enable,
+			config.Net.TLS.Enable,
+			config.Net.SASL.Mechanism)
+
 		client, err = sarama.NewClient(brokers, config)
 		if err != nil {
-			log.Printf("Error creating client: %v", err)
+			log.Printf("Ошибка создания клиента (детально): %+v", err)
 			return err
 		}
-		log.Println("Kafka client created successfully")
+		log.Println("Kafka клиент успешно создан")
 		return nil
 	}
 
 	// Первичное создание клиента
 	if err := createClient(); err != nil {
+		log.Printf("Критическая ошибка при создании клиента: %+v", err)
 		log.Fatalf("Initial client creation failed: %v", err)
 	}
 
