@@ -11,37 +11,17 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Фасад для команд Kafka
-type CommandsKafka struct {
-	topicList                *TopicList
-	topicGenerateNewDestPart *TopicGenerateNewDestPart
-	topicVerifyNewDestPart   *TopicVerifyNewDestPart
-	topicApplyNewDestPart    *TopicApplyNewDestPart
-}
+type TopicApplyReassignPart struct{}
 
-// Конструктор фасада
-func NewCommandKafka() *CommandsKafka {
-	return &CommandsKafka{
-		topicList:                &TopicList{},
-		topicGenerateNewDestPart: &TopicGenerateNewDestPart{},
-		topicVerifyNewDestPart:   &TopicVerifyNewDestPart{},
-		topicApplyNewDestPart:    &TopicApplyNewDestPart{},
-	}
-}
-
-type TopicList struct {
+type Topic struct {
 	Topics  []map[string]string `json:"topics"`
 	Version int                 `json:"version"`
 }
 
-type TopicGenerateNewDestPart struct{}
-type TopicVerifyNewDestPart struct{}
-type TopicApplyNewDestPart struct{}
-
-func (c *TopicList) topicList(client sarama.Client) (*TopicList, error) {
+func (c *Topic) topicList(client sarama.Client) (*Topic, error) {
 	admin, err := sarama.NewClusterAdminFromClient(client)
 	if err != nil {
-		log.Printf("Error creating admin client: %v", err)
+		log.Printf("Ошибка создания клиента: %v", err)
 		return nil, err
 	}
 	defer admin.Close()
@@ -49,7 +29,7 @@ func (c *TopicList) topicList(client sarama.Client) (*TopicList, error) {
 	// Получаем список топиков
 	topics, err := admin.ListTopics()
 	if err != nil {
-		log.Printf("Error listing topics: %v", err)
+		log.Printf("Ошибка получения списка топиков: %v", err)
 		return nil, err
 	}
 
@@ -69,31 +49,57 @@ func (c *TopicList) topicList(client sarama.Client) (*TopicList, error) {
 	// Преобразуем структуру в JSON для красивого вывода
 	jsonData, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
-		log.Printf("Error marshaling JSON: %v", err)
+		log.Printf("Ошибка парсинга JSON: %v", err)
 		return nil, err
 	}
-	log.Printf("Topics list successfully stored in memory:\n%s", string(jsonData))
+	log.Printf("Топик лист успешно сохранен в памяти:\n%s", string(jsonData))
 	return c, nil
-
 }
 
-func (c *TopicGenerateNewDestPart) topicGenerateNewDestPart(topicList *TopicList) error {
+func (c *Topic) topicGenerateReassignPart(topicList *Topic) error {
 	// Преобраузем список топиков в JSON
 	jsonData, err := json.MarshalIndent(topicList, "", "  ")
 	if err != nil {
-		log.Printf("Error marshaling JSON: %v", err)
+		log.Printf("Ошибка парсинга JSON: %v", err)
 		return err
 	}
+
+	// Получаем Значения из конфига
+	brokerSlice := viper.GetStringSlice("kafka.broker")
+	var broker string
+	if len(brokerSlice) > 0 {
+		broker = brokerSlice[0] // Берем первый элемент из среза
+	} else {
+		log.Printf("Список брокеров пуст")
+		return fmt.Errorf("список брокеров пуст")
+	}
+
+	securityProtocol := viper.GetString("kafka.sasl.securityProtocol")
+	saslMechanism := viper.GetString("kafka.sasl.mechanism")
+	saslUsername := viper.GetString("kafka.sasl.username")
+	saslPassword := viper.GetString("kafka.sasl.password")
+	brokerListId := viper.GetString("container.brokerList")
 
 	config := fmt.Sprintf(`
 	security.protocol=%s
 	sasl.mechanism=%s
-	sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, viper.GetString("kafka.sasl.securityProtocol"), viper.GetString("kafka.sasl.mechanism"), viper.GetString("kafka.sasl.username"), viper.GetString("kafka.sasl.password"))
+	sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, securityProtocol, saslMechanism, saslUsername, saslPassword)
 
-	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c",
-		fmt.Sprintf(`
-		echo '%s' > /tmp/config.properties && kafka-reassign-partitions.sh --bootstrap-server "%s" --topics-to-move-json-file "%s" --broker-list "%s" --generate
-		--command-config /tmp/config.properties  > expand-cluster-reassignment.json && rm /tmp/config.properties`, config, viper.GetString("kafka.broker"), string(jsonData), viper.GetString("kafka.brokerList")))
+	commandStr := fmt.Sprintf(`
+		echo '%s' > /tmp/config.properties && \
+		echo '%s' > /tmp/topics-to-move.json && \
+		kafka-reassign-partitions.sh --bootstrap-server "%s" \
+		--topics-to-move-json-file "/tmp/topics-to-move.json" \
+		--broker-list "%s" --generate \
+		--command-config /tmp/config.properties \
+		> /tmp/expand-cluster-reassignment.json && \
+		rm /tmp/config.properties && \
+		rm /tmp/topics-to-move.json`, config, string(jsonData), broker, brokerListId)
+
+	// Вывод команды в лог
+	// log.Printf("Executing command: %s", commandStr)
+
+	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -101,13 +107,113 @@ func (c *TopicGenerateNewDestPart) topicGenerateNewDestPart(topicList *TopicList
 	return cmd.Run()
 }
 
-func (c *CommandsKafka) TopicVerify(client sarama.Client) error {
-	topicList, err := c.topicList.topicList(client)
+func (c *Topic) topicVerifyReassignPart() error {
+	brokerSlice := viper.GetStringSlice("kafka.broker")
+	var broker string
+	if len(brokerSlice) > 0 {
+		broker = brokerSlice[0] // Берем первый элемент из среза
+	} else {
+		log.Printf("Список брокеров пуст")
+		return fmt.Errorf("список брокеров пуст")
+	}
+	securityProtocol := viper.GetString("kafka.sasl.securityProtocol")
+	saslMechanism := viper.GetString("kafka.sasl.mechanism")
+	saslUsername := viper.GetString("kafka.sasl.username")
+	saslPassword := viper.GetString("kafka.sasl.password")
+
+	config := fmt.Sprintf(`
+	security.protocol=%s
+	sasl.mechanism=%s
+	sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, securityProtocol, saslMechanism, saslUsername, saslPassword)
+
+	commandStr := fmt.Sprintf(`
+		echo '%s' > /tmp/config.properties && \
+		kafka-reassign-partitions.sh --bootstrap-server "%s" \
+		--reassignment-json-file /tmp/expand-cluster-reassignment.json --verify \
+		--command-config /tmp/config.properties && \
+		rm /tmp/config.properties`, config, broker)
+
+	// Вывод команды в лог
+	// log.Printf("Executing command: %s", commandStr)
+
+	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+func (c *Topic) topicApplyReassignPart() error {
+	brokerSlice := viper.GetStringSlice("kafka.broker")
+	var broker string
+	if len(brokerSlice) > 0 {
+		broker = brokerSlice[0] // Берем первый элемент из среза
+	} else {
+		log.Printf("Список брокеров пуст")
+		return fmt.Errorf("список брокеров пуст")
+	}
+	securityProtocol := viper.GetString("kafka.sasl.securityProtocol")
+	saslMechanism := viper.GetString("kafka.sasl.mechanism")
+	saslUsername := viper.GetString("kafka.sasl.username")
+	saslPassword := viper.GetString("kafka.sasl.password")
+
+	config := fmt.Sprintf(`
+	security.protocol=%s
+	sasl.mechanism=%s
+	sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, securityProtocol, saslMechanism, saslUsername, saslPassword)
+
+	commandStr := fmt.Sprintf(`
+		echo '%s' > /tmp/config.properties && \
+		kafka-reassign-partitions.sh --bootstrap-server "%s" \
+		--reassignment-json-file /tmp/expand-cluster-reassignment.json --execute \
+		--command-config /tmp/config.properties && \
+		rm /tmp/config.properties`, config, broker)
+
+	// Вывод команды в лог
+	// log.Printf("Executing command: %s", commandStr)
+
+	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+// Фасад для команд Kafka
+type CommandsKafka struct {
+	topic *Topic
+}
+
+// Конструктор фасада
+func NewCommandKafka() *CommandsKafka {
+	return &CommandsKafka{
+		topic: &Topic{},
+	}
+}
+
+func (c *CommandsKafka) TopicGenerateReassignPart(client sarama.Client) error {
+	topicList, err := c.topic.topicList(client)
 	if err != nil {
 		return err
 	}
-	c.topicGenerateNewDestPart.topicGenerateNewDestPart(topicList)
-	// c.topicVerifyNewDestPart.topicVerifyNewDestPart(client)
+	if err := c.topic.topicGenerateReassignPart(topicList); err != nil {
+		return err
+	}
 	return nil
+}
 
+func (c *CommandsKafka) TopicVerify() error {
+	if err := c.topic.topicVerifyReassignPart(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *CommandsKafka) TopicApply() error {
+	if err := c.topic.topicApplyReassignPart(); err != nil {
+		return err
+	}
+	return nil
 }
