@@ -14,9 +14,9 @@ import (
 	"github.com/xdg-go/scram"
 )
 
-func init() {
-	sarama.Logger = log.New(os.Stdout, "[Sarama] ", log.LstdFlags|log.Lshortfile)
-}
+// func init() {
+// 	sarama.Logger = log.New(os.Stdout, "[Sarama] ", log.LstdFlags|log.Lshortfile)
+// }
 
 func main() {
 
