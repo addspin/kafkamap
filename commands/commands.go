@@ -93,7 +93,7 @@ func (c *TopicGenerateNewDestPart) topicGenerateNewDestPart(topicList *TopicList
 	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c",
 		fmt.Sprintf(`
 		echo '%s' > /tmp/config.properties && kafka-reassign-partitions.sh --bootstrap-server "%s" --topics-to-move-json-file "%s" --broker-list "%s" --generate
-		Current partition replica assignment --command-config /tmp/config.properties && rm /tmp/config.properties`, config, viper.GetString("kafka.broker"), string(jsonData), viper.GetString("kafka.brokerList")))
+		--command-config /tmp/config.properties  > expand-cluster-reassignment.json && rm /tmp/config.properties`, config, viper.GetString("kafka.broker"), string(jsonData), viper.GetString("kafka.brokerList")))
 
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
