@@ -24,6 +24,7 @@ func main() {
 	generateFlag := flag.Bool("g", false, "Выполнить генерацию файлов с топиками, для перераспределения партиций")
 	applyFlag := flag.Bool("a", false, "Применить перераспределение партиций")
 	verifyFlag := flag.Bool("v", false, "Проверить перераспределение партиций")
+	rollbackFlag := flag.Bool("r", false, "Откатить перераспределение партиций к предыдущему состоянию")
 	helpFlag := flag.Bool("h", false, "Вывести справку")
 
 	// Парсим флаги
@@ -124,6 +125,11 @@ func main() {
 	cmd := commands.NewCommandKafka()
 
 	// Выполняем команды в зависимости от флагов
+	if *rollbackFlag {
+		if err := cmd.TopicRollback(); err != nil {
+			log.Printf("Ошибка отката топиков: %v", err)
+		}
+	}
 
 	if *generateFlag {
 		if err := cmd.TopicGenerateReassignPart(client); err != nil {
