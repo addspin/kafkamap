@@ -1,0 +1,44 @@
+{
+  "topics": [
+    {
+      "topic": "delivery-report"
+    },
+    {
+      "topic": "events"
+    },
+    {
+      "topic": "messages"
+    },
+    {
+      "topic": "response"
+    },
+    {
+      "topic": "troubles"
+    },
+    {
+      "topic": "egts-sp-message"
+    },
+    {
+      "topic": "sms"
+    },
+    {
+      "topic": "egts-sp-events"
+    },
+    {
+      "topic": "commands"
+    },
+    {
+      "topic": "message-flex"
+    },
+    {
+      "topic": "galileo-messages"
+    },
+    {
+      "topic": "mqtt-sp"
+    },
+    {
+      "topic": "activations"
+    }
+  ],
+  "version": 1
+}
