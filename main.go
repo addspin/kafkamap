@@ -3,7 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/sha512"
-	"encoding/json"
+	"kafkamap/commands"
 	"log"
 	"os"
 	"os/signal"
@@ -33,7 +33,7 @@ func main() {
 	config.Net.SASL.Enable = viper.GetBool("kafka.sasl.enabled")
 	config.Net.SASL.User = viper.GetString("kafka.sasl.username")
 	config.Net.SASL.Password = viper.GetString("kafka.sasl.password")
-	config.Net.SASL.Mechanism = sarama.SASLMechanism(viper.GetString("kafka.sasl.mechanism"))
+	// config.Net.SASL.Mechanism = sarama.SASLMechanism(viper.GetString("kafka.sasl.mechanism"))
 
 	// Указываем протокол безопасности
 	config.Net.TLS.Enable = viper.GetBool("kafka.tls.enabled")
@@ -107,7 +107,9 @@ func main() {
 			log.Printf("Reconnection failed: %v", err)
 		}
 	}
-	topicList(client)
+
+	cmd := commands.NewCommandKafka()
+	cmd.TopicVerify(client)
 
 	// Обработка сигналов для корректного закрытия
 	c := make(chan os.Signal, 1)
@@ -123,53 +125,68 @@ func main() {
 	}()
 }
 
-func topicList(client sarama.Client) {
-	admin, err := sarama.NewClusterAdminFromClient(client)
-	if err != nil {
-		log.Printf("Error creating admin client: %v", err)
-		return
-	}
-	defer admin.Close()
+// func topicList(client sarama.Client) error {
+// 	admin, err := sarama.NewClusterAdminFromClient(client)
+// 	if err != nil {
+// 		log.Printf("Error creating admin client: %v", err)
+// 		return err
+// 	}
+// 	defer admin.Close()
 
-	// Получаем список топиков
-	topics, err := admin.ListTopics()
-	if err != nil {
-		log.Printf("Error listing topics: %v", err)
-		return
-	}
+// 	// Получаем список топиков
+// 	topics, err := admin.ListTopics()
+// 	if err != nil {
+// 		log.Printf("Error listing topics: %v", err)
+// 		return err
+// 	}
 
-	// Сбор имен топиков
-	var topicList []map[string]string
-	for topicName := range topics {
-		if topicName == "__consumer_offsets" {
-			continue
-		}
-		topicList = append(topicList, map[string]string{"topic": topicName})
-	}
+// 	// Сбор имен топиков
+// 	var topicList []map[string]string
+// 	for topicName := range topics {
+// 		if topicName == "__consumer_offsets" {
+// 			continue
+// 		}
+// 		topicList = append(topicList, map[string]string{"topic": topicName})
+// 	}
 
-	// Создание JSON структуры
-	data := map[string]interface{}{
-		"topics":  topicList,
-		"version": 1,
-	}
+// 	// Создание JSON структуры
+// 	data := map[string]interface{}{
+// 		"topics":  topicList,
+// 		"version": 1,
+// 	}
 
-	// Запись в JSON файл
-	file, err := os.Create("topics.json")
-	if err != nil {
-		log.Printf("Error creating JSON file: %v", err)
-		return
-	}
-	defer file.Close()
+// 	// Запись в JSON файл
+// 	file, err := os.Create("topics.json")
+// 	if err != nil {
+// 		log.Printf("Error creating JSON file: %v", err)
+// 		return err
+// 	}
+// 	defer file.Close()
 
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	if err := encoder.Encode(data); err != nil {
-		log.Printf("Error encoding JSON: %v", err)
-		return
-	}
+// 	encoder := json.NewEncoder(file)
+// 	encoder.SetIndent("", "  ")
+// 	if err := encoder.Encode(data); err != nil {
+// 		log.Printf("Error encoding JSON: %v", err)
+// 		return err
+// 	}
 
-	log.Println("JSON file created successfully")
-}
+// 	log.Println("JSON file created successfully")
+// 	return nil
+// }
+
+// func ExecuteKafkaCommand() error {
+// 	config := fmt.Sprintf(`security.protocol=%s
+// sasl.mechanism=%s
+// sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, viper.GetString("kafka.securityProtocol"), viper.GetString("kafka.sasl.mechanism"), viper.GetString("kafka.sasl.username"), viper.GetString("kafka.sasl.password"))
+
+// 	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c",
+// 		fmt.Sprintf(`echo '%s' > /tmp/config.properties && kafka-topics.sh --describe --bootstrap-server localhost:9092 --command-config /tmp/config.properties && rm /tmp/config.properties`, config))
+
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+
+// 	return cmd.Run()
+// }
 
 var (
 	SHA256 scram.HashGeneratorFcn = sha256.New
