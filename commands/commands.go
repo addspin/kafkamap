@@ -61,7 +61,7 @@ func (c *TopicList) topicList(client sarama.Client) error {
 func (c *TopicGenerateNewDestPart) topicGenerateNewDestPart() error {
 	config := fmt.Sprintf(`security.protocol=%s
 sasl.mechanism=%s
-sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, viper.GetString("kafka.securityProtocol"), viper.GetString("kafka.sasl.mechanism"), viper.GetString("kafka.sasl.username"), viper.GetString("kafka.sasl.password"))
+sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, viper.GetString("kafka.sasl.securityProtocol"), viper.GetString("kafka.sasl.mechanism"), viper.GetString("kafka.sasl.username"), viper.GetString("kafka.sasl.password"))
 
 	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c",
 		fmt.Sprintf(`echo '%s' > /tmp/config.properties && kafka-topics.sh --describe --bootstrap-server localhost:9092 --command-config /tmp/config.properties && rm /tmp/config.properties`, config))
