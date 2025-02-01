@@ -94,9 +94,19 @@ func (c *Topic) topicGenerateReassignPart(topicList *Topic) error {
 		kafka-reassign-partitions.sh --bootstrap-server "%s" \
 		--topics-to-move-json-file "/tmp/topics-to-move.json" \
 		--broker-list "%s" --generate \
-		--command-config /tmp/config.properties > /tmp/all-expand-cluster-reassignment.json && \
-		awk '/Current partition replica assignment/,/^$/' /tmp/all-expand-cluster-reassignment.json > /tmp/backup-expand-cluster-reassignment.json && \
-		awk '/Proposed partition reassignment configuration/,0' /tmp/all-expand-cluster-reassignment.json > /tmp/expand-cluster-reassignment.json && \
+		--command-config /tmp/config.properties | \
+		awk '
+			/Current partition replica assignment/,/^$/ {
+				if (!/Current partition replica assignment/ && !/^$/) {
+					print > "/tmp/backup-expand-cluster-reassignment.json"
+				}
+			}
+			/Proposed partition reassignment configuration/,0 {
+				if (!/Proposed partition reassignment configuration/) {
+					print > "/tmp/expand-cluster-reassignment.json"
+				}
+			}
+		' && \
 		rm /tmp/config.properties && \
 		rm /tmp/topics-to-move.json && \
 		rm /tmp/all-expand-cluster-reassignment.json`, config, string(jsonData), broker, brokerListId)
