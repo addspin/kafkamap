@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-type TopicApplyReassignPart struct{}
+// type TopicApplyReassignPart struct{}
 
 type Topic struct {
 	Topics  []map[string]string `json:"topics"`
@@ -232,6 +232,8 @@ func (c *Topic) topicRollbackReassignPart() error {
 
 	return cmd.Run()
 }
+
+type KafkaAcl struct{}
 
 // Фасад для команд Kafka
 type CommandsKafka struct {
