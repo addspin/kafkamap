@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/IBM/sarama"
 	"github.com/spf13/viper"
@@ -47,12 +48,13 @@ func (c *Topic) topicList(client sarama.Client) (*Topic, error) {
 	c.Version = 1
 
 	// Преобразуем структуру в JSON для красивого вывода
-	jsonData, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		log.Printf("Ошибка парсинга JSON: %v", err)
-		return nil, err
-	}
-	log.Printf("Топик лист успешно сохранен в памяти:\n%s", string(jsonData))
+	// jsonData, err := json.MarshalIndent(c, "", "  ")
+	// if err != nil {
+	// 	log.Printf("Ошибка парсинга JSON: %v", err)
+	// 	return nil, err
+	// }
+	// log.Printf("Топик лист успешно сохранен в памяти:\n%s", string(jsonData))
+	// log.Println("Топик лист успешно сохранен")
 	return c, nil
 }
 
@@ -233,28 +235,62 @@ func (c *Topic) topicRollbackReassignPart() error {
 	return cmd.Run()
 }
 
-type KafkaAcl struct{}
+type Acl struct{}
+
+func (a *Acl) aclList() error {
+	return nil
+}
 
 // Фасад для команд Kafka
 type CommandsKafka struct {
 	topic *Topic
+	acl   *Acl
 }
 
 // Конструктор фасада
 func NewCommandKafka() *CommandsKafka {
 	return &CommandsKafka{
 		topic: &Topic{},
+		acl:   &Acl{},
 	}
 }
 
-func (c *CommandsKafka) TopicGenerateReassignPart(client sarama.Client) error {
-	topicList, err := c.topic.topicList(client)
-	if err != nil {
-		return err
+func (c *CommandsKafka) TopicGenerateReassignPart(client sarama.Client, topicsFile string) error {
+	if topicsFile != "" {
+		// Читаем топики из файла
+		content, err := os.ReadFile(topicsFile)
+		if err != nil {
+			return fmt.Errorf("ошибка чтения файла с топиками: %v", err)
+		}
+
+		// Инициализируем структуру Topic
+		topicList := &Topic{
+			Version: 1,
+			Topics:  make([]map[string]string, 0),
+		}
+
+		// Разбираем топики из файла
+		topicNames := strings.Split(strings.TrimSpace(string(content)), "\n")
+		for _, topicName := range topicNames {
+			if topicName != "" {
+				topicList.Topics = append(topicList.Topics, map[string]string{"topic": topicName})
+			}
+		}
+
+		if err := c.topic.topicGenerateReassignPart(topicList); err != nil {
+			return err
+		}
+	} else {
+		// Получаем все топики, если файл не указан
+		topicList, err := c.topic.topicList(client)
+		if err != nil {
+			return err
+		}
+		if err := c.topic.topicGenerateReassignPart(topicList); err != nil {
+			return err
+		}
 	}
-	if err := c.topic.topicGenerateReassignPart(topicList); err != nil {
-		return err
-	}
+
 	return nil
 }
 

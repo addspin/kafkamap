@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/sha512"
-	"flag"
 	"kafkamap/commands"
 	"log"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/IBM/sarama"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"github.com/xdg-go/scram"
 )
@@ -20,18 +20,20 @@ import (
 // }
 
 func main() {
+
 	// Определяем флаги командной строки
-	generateFlag := flag.Bool("g", false, "Выполнить генерацию файлов с топиками, для перераспределения партиций")
-	applyFlag := flag.Bool("a", false, "Применить перераспределение партиций")
-	verifyFlag := flag.Bool("v", false, "Проверить перераспределение партиций")
-	rollbackFlag := flag.Bool("r", false, "Откатить перераспределение партиций к предыдущему состоянию")
-	helpFlag := flag.Bool("h", false, "Вывести справку")
+	generateFlag := pflag.BoolP("generate", "g", false, "Выполнить генерацию файлов с топиками, для перераспределения партиций, если добавить -f, то будет использоваться путь к файлу с топиками")
+	applyFlag := pflag.BoolP("apply", "a", false, "Применить перераспределение партиций")
+	verifyFlag := pflag.BoolP("verify", "v", false, "Проверить перераспределение партиций")
+	rollbackFlag := pflag.BoolP("rollback", "r", false, "Откатить перераспределение партиций к предыдущему состоянию")
+	helpFlag := pflag.BoolP("help", "h", false, "Вывести справку")
+	topicsFile := pflag.StringP("file", "f", "", "Путь к файлу со списком топиков")
 
 	// Парсим флаги
-	flag.Parse()
+	pflag.Parse()
 
-	if *helpFlag {
-		flag.PrintDefaults()
+	if *helpFlag || pflag.NFlag() == 0 {
+		pflag.PrintDefaults()
 		os.Exit(0)
 	}
 
@@ -127,27 +129,38 @@ func main() {
 	// Выполняем команды в зависимости от флагов
 	if *rollbackFlag {
 		if err := cmd.TopicRollback(); err != nil {
-			log.Printf("Ошибка отката топиков: %v", err)
+			log.Printf("Ошибка отката перераспределения партиций топиков: %v", err)
 		}
+		log.Printf("==========================================================================")
+		log.Printf("✅ Задача по откату перераспределения партиций топиков, успешно выполнена!")
+		log.Printf("==========================================================================")
 	}
 
 	if *generateFlag {
-		if err := cmd.TopicGenerateReassignPart(client); err != nil {
-			log.Printf("Ошибка генерации топиков: %v", err)
+		if err := cmd.TopicGenerateReassignPart(client, *topicsFile); err != nil {
+			log.Printf("Ошибка генерации файлов с топиками для перераспределения партиций: %v", err)
 		}
-		log.Printf("Файлы с топиками успешно сгенерированы")
+		log.Printf("=========================================================================")
+		log.Printf("✅ Файлы с топиками для перераспределения партиций успешно сгенерированы!")
+		log.Printf("=========================================================================")
 	}
 
 	if *applyFlag {
 		if err := cmd.TopicApply(); err != nil {
-			log.Printf("Ошибка применения топиков: %v", err)
+			log.Printf("Ошибка применения перераспределение партиций топиков: %v", err)
 		}
+		log.Printf("===================================================================")
+		log.Printf("✅ Задача по перераспределению партиций топиков, успешно запущена!")
+		log.Printf("===================================================================")
 	}
 
 	if *verifyFlag {
 		if err := cmd.TopicVerify(); err != nil {
-			log.Printf("Ошибка проверки топиков: %v", err)
+			log.Printf("Ошибка проверки перераспределения партиций топиков: %v", err)
 		}
+		log.Printf("============================================================================")
+		log.Printf("✅ Задача по проверке перераспределения партиций топиков, успешно выполнена!")
+		log.Printf("============================================================================")
 	}
 
 	// Обработка сигналов для корректного закрытия
