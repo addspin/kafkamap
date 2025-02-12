@@ -10,6 +10,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // type TopicApplyReassignPart struct{}
@@ -90,9 +91,6 @@ func (c *Topic) topicGenerateReassignPart(topicList *Topic) error {
 	commandStr := fmt.Sprintf(`
 		echo '%s' > /tmp/config.properties && \
 		echo '%s' > /tmp/topics-to-move.json && \
-		echo '' > /tmp/all-expand-cluster-reassignment.json && \
-		echo '' > /tmp/expand-cluster-reassignment.json && \
-		echo '' > /tmp/backup-expand-cluster-reassignment.json && \
 		kafka-reassign-partitions.sh --bootstrap-server "%s" \
 		--topics-to-move-json-file "/tmp/topics-to-move.json" \
 		--broker-list "%s" --generate \
@@ -109,12 +107,7 @@ func (c *Topic) topicGenerateReassignPart(topicList *Topic) error {
 				}
 			}
 		' && \
-		rm /tmp/config.properties && \
-		rm /tmp/topics-to-move.json && \
-		rm /tmp/all-expand-cluster-reassignment.json`, config, string(jsonData), broker, brokerListId)
-
-	// Вывод команды в лог
-	// log.Printf("Executing command: %s", commandStr)
+		rm /tmp/config.properties`, config, string(jsonData), broker, brokerListId)
 
 	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
 
@@ -235,6 +228,99 @@ func (c *Topic) topicRollbackReassignPart() error {
 	return cmd.Run()
 }
 
+func (c *Topic) topicCreate(filePath string) error {
+	// Чтение YAML файла
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Ошибка чтения файла %s: %v", filePath, err)
+		return err
+	}
+
+	// Парсинг YAML в карту
+	var values map[string]map[string]map[string]interface{}
+	err = yaml.Unmarshal(data, &values)
+	if err != nil {
+		log.Printf("Ошибка парсинга YAML файла: %v", err)
+		return err
+	}
+
+	// Проверка наличия секции "topics"
+	topicsConfig, exists := values["topics"]
+	if !exists {
+		return fmt.Errorf("отсутствует секция 'topics'")
+	}
+
+	// Получаем параметры из конфига
+	brokerSlice := viper.GetStringSlice("kafka.broker")
+	var broker string
+	if len(brokerSlice) > 0 {
+		broker = brokerSlice[0]
+	} else {
+		return fmt.Errorf("список брокеров пуст")
+	}
+
+	securityProtocol := viper.GetString("kafka.sasl.securityProtocol")
+	saslMechanism := viper.GetString("kafka.sasl.mechanism")
+	saslUsername := viper.GetString("kafka.sasl.username")
+	saslPassword := viper.GetString("kafka.sasl.password")
+
+	config := fmt.Sprintf(`
+	security.protocol=%s
+	sasl.mechanism=%s
+	sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, securityProtocol, saslMechanism, saslUsername, saslPassword)
+
+	// Создаем топики
+	// var createErrors []string
+	for topicName, params := range topicsConfig {
+		var configParams []string
+		var partitions, replicas string
+
+		// Обработка параметров
+		for key, value := range params {
+			strValue := fmt.Sprintf("%v", value)
+			switch key {
+			case "partitions":
+				partitions = strValue
+			case "replicas":
+				replicas = strValue
+			default:
+				configParams = append(configParams, fmt.Sprintf("%s=%s", key, strValue))
+			}
+		}
+
+		// Формируем дополнительные параметры конфигурации идущие через --config
+		var command string
+		if len(configParams) > 0 {
+			for _, param := range configParams {
+				command += fmt.Sprintf(` --config %s`, param)
+			}
+		}
+
+		// Формируем команду
+		commandStr := fmt.Sprintf(`
+			echo '%s' > /tmp/config.properties && \
+			kafka-topics.sh --create --topic %s \
+			--bootstrap-server %s \
+			--partitions %s \
+			--replication-factor %s \
+			%s \
+			--command-config /tmp/config.properties && \
+			rm /tmp/config.properties`,
+			config, topicName, broker, partitions, replicas, command)
+
+		// Выполняем команду
+		cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
+		cmd.Stdout = os.Stdout
+		// cmd.Stderr = os.Stderr // Выводим только ошибки инструментов кафки
+
+		if err := cmd.Run(); err != nil {
+			continue // Продолжаем со следующим топиком
+		}
+		log.Printf("Топик %s успешно создан", topicName)
+	}
+	return nil
+}
+
 type Acl struct{}
 
 func (a *Acl) aclList() error {
@@ -310,6 +396,13 @@ func (c *CommandsKafka) TopicApply() error {
 
 func (c *CommandsKafka) TopicRollback() error {
 	if err := c.topic.topicRollbackReassignPart(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *CommandsKafka) TopicCreate(filePath string) error {
+	if err := c.topic.topicCreate(filePath); err != nil {
 		return err
 	}
 	return nil
