@@ -91,11 +91,16 @@ func (c *Topic) topicGenerateReassignPart(topicList *Topic) error {
 	commandStr := fmt.Sprintf(`
 		echo '%s' > /tmp/config.properties && \
 		echo '%s' > /tmp/topics-to-move.json && \
-		kafka-reassign-partitions.sh --bootstrap-server "%s" \
+		RESULT=$(kafka-reassign-partitions.sh --bootstrap-server "%s" \
 		--topics-to-move-json-file "/tmp/topics-to-move.json" \
 		--broker-list "%s" --generate \
-		--command-config /tmp/config.properties | \
-		awk '
+		--command-config /tmp/config.properties)
+		if [ $? -ne 0 ]; then
+			echo $RESULT >&2
+			rm /tmp/config.properties /tmp/topics-to-move.json
+			exit 1
+		fi && \
+		echo "$RESULT" | awk '
 			/Current partition replica assignment/,/^$/ {
 				if (!/Current partition replica assignment/ && !/^$/) {
 					print > "/tmp/backup-expand-cluster-reassignment.json"
@@ -110,11 +115,11 @@ func (c *Topic) topicGenerateReassignPart(topicList *Topic) error {
 		rm /tmp/config.properties`, config, string(jsonData), broker, brokerListId)
 
 	cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s", string(output))
+	}
+	return nil
 }
 
 func (c *Topic) topicVerifyReassignPart() error {
@@ -318,6 +323,10 @@ func (c *Topic) topicCreate(filePath string) error {
 		}
 		log.Printf("Топик %s успешно создан", topicName)
 	}
+	return nil
+}
+
+func (c *Topic) topicAlterConfig(filePath string) error {
 	return nil
 }
 
