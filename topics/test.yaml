@@ -1,21 +1,21 @@
 topics:
   test01:
     cleanup.policy: delete
-    max.message.bytes: '1000012'
-    min.insync.replicas: '2'
-    retention.bytes: '107374182400' # 100GB
-    retention.ms: '129600000' #36 hours
-    segment.bytes: '268435456'
+    max.message.bytes: 1000012
+    min.insync.replicas: 2
+    retention.bytes: 107374182400 # 100GB
+    retention.ms: 129600000 #36 hours
+    segment.bytes: 268435456
     partitions: 1
     replicas: 6
 
   test02:
     cleanup.policy: delete
-    max.message.bytes: '1000012'
-    min.insync.replicas: '2'
-    retention.bytes: '107374182400' # 100GB
-    retention.ms: '129600000' #36 hours
-    segment.bytes: '268435456'
+    max.message.bytes: 1000012
+    min.insync.replicas: 2
+    retention.bytes: 107374182400 # 100GB
+    retention.ms: 129600000 #36 hours
+    segment.bytes: 268435456
     partitions: 1
     replicas: 6
 

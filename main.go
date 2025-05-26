@@ -29,6 +29,10 @@ func main() {
 	helpFlag := pflag.BoolP("help", "h", false, "Вывести справку")
 	topicsFile := pflag.StringP("file", "f", "", "Путь к файлу со списком существующих топиков")
 	createTopicFile := pflag.StringP("createTopic", "", "", "Создать топик, используется ключ и путь до yaml файла: --createTopic /topics/test.yaml")
+	createUserFile := pflag.StringP("createUser", "", "", "Создать пользователя, используется ключ и путь до yaml файла: --createUser /users/test.yaml")
+	createUserAclFile := pflag.StringP("createUserAcl", "", "", "Добавить ACL для пользователя, используется ключ и путь до yaml файла: --createUserAcl /users/test.yaml")
+	aclList := pflag.StringP("aclList", "", "", "Вывести список ACL для пользователя, используется ключ и имя пользователя: --aclList test")
+	// whoTopicPart := pflag.StringP("whoTopicPart", "", "", "Вывести список партиций топиков, используется ключ и путь до yaml файла: --whoTopicPart /topics/test.yaml")
 
 	// Парсим флаги
 	pflag.Parse()
@@ -129,7 +133,7 @@ func main() {
 
 	// Выполняем команды в зависимости от флагов
 	if *rollbackFlag {
-		if err := cmd.TopicRollback(); err != nil {
+		if err := cmd.TopicRollbackReassignPart(); err != nil {
 			log.Printf("Ошибка отката перераспределения партиций топиков: %v", err)
 		}
 		log.Printf("==========================================================================")
@@ -151,7 +155,7 @@ func main() {
 	}
 
 	if *applyFlag {
-		if err := cmd.TopicApply(); err != nil {
+		if err := cmd.TopicApplyReassignPart(); err != nil {
 			log.Printf("Ошибка применения перераспределение партиций топиков: %v", err)
 		}
 		log.Printf("===================================================================")
@@ -160,7 +164,7 @@ func main() {
 	}
 
 	if *verifyFlag {
-		if err := cmd.TopicVerify(); err != nil {
+		if err := cmd.TopicVerifyReassignPart(); err != nil {
 			log.Printf("Ошибка проверки перераспределения партиций топиков: %v", err)
 		}
 		log.Printf("============================================================================")
@@ -179,6 +183,39 @@ func main() {
 			log.Printf("============================================================================")
 		}
 	}
+
+	if *createUserFile != "" {
+		if err := cmd.UserCreate(*createUserFile); err != nil {
+			log.Printf("Ошибка при создании пользователя: %v", err)
+		}
+	}
+
+	if *createUserAclFile != "" {
+		if err := cmd.UserAddAcl(*createUserAclFile); err != nil {
+			log.Printf("Ошибка при добавлении ACL для пользователя: %v", err)
+		}
+	}
+
+	if *aclList != "" {
+		if err := cmd.AclList(*aclList); err != nil {
+			log.Printf("Ошибка при выводе ACL для пользователя: %v", err)
+
+		}
+	}
+
+	// if *whoTopicPart != "" {
+	// 	data, replicaBrokerId, err := cmd.WhoTopicPart(client, *whoTopicPart)
+	// 	if err != nil {
+	// 		log.Printf("Ошибка вывода списка партиций топиков: %v", err)
+	// 	} else {
+	// 		for topic, brokers := range data {
+	// 			log.Printf("Топик: %s, Брокеры: %v", topic, brokers)
+	// 		}
+	// 		for topic, brokers := range replicaBrokerId {
+	// 			log.Printf("Топик: %s, Брокеры: %v", topic, brokers)
+	// 		}
+	// 	}
+	// }
 
 	// Обработка сигналов для корректного закрытия
 	c := make(chan os.Signal, 1)

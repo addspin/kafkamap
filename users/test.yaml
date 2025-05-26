@@ -1,0 +1,27 @@
+users:
+  - username: test
+    password: test
+    acls:
+      - allow: true
+        operation: read
+        topic: test01
+        resource-pattern-type: literal
+      - allow: true
+        operation: write
+        topic: test01
+        resource-pattern-type: literal
+      - allow: true
+        operation: read
+        group: test01-consumer-group
+        resource-pattern-type: literal
+  - username: test02
+    password: test02
+    acls:
+      - allow: true
+        operation: read
+        topic: test02
+        resource-pattern-type: literal
+      # - allow: true
+      #   operation: write
+      #   cluster: kafka-cluster
+      #   resource-pattern-type: LITERAL
