@@ -28,7 +28,10 @@ func main() {
 	rollbackFlag := pflag.BoolP("mapPartRollback", "r", false, "Откатить перераспределение партиций к предыдущему состоянию")
 	helpFlag := pflag.BoolP("help", "h", false, "Вывести справку")
 	topicsFile := pflag.StringP("file", "f", "", "Путь к файлу со списком существующих топиков")
+	topicDelete := pflag.StringP("topicDelete", "", "", "Удалить топик по имени: --topicDelete my_topic")
+	topicDeleteFile := pflag.StringP("topicDeleteFile", "", "", "Удалить топики из файла: --topicDeleteFile /path/to/topics.txt")
 	createTopicFile := pflag.StringP("createTopic", "", "", "Создать топик, используется ключ и путь до yaml файла: --createTopic /topics/test.yaml")
+	changeTopicFile := pflag.StringP("changeTopic", "", "", "Изменить топик, используется ключ и путь до yaml файла: --changeTopic /topics/test.yaml")
 	createUserFile := pflag.StringP("createUser", "", "", "Создать пользователя, используется ключ и путь до yaml файла: --createUser /users/test.yaml")
 	createUserAclFile := pflag.StringP("createUserAcl", "", "", "Добавить ACL для пользователя, используется ключ и путь до yaml файла: --createUserAcl /users/test.yaml")
 	aclList := pflag.StringP("aclList", "", "", "Вывести список ACL для пользователя, используется ключ и имя пользователя: --aclList test")
@@ -180,6 +183,33 @@ func main() {
 		} else {
 			log.Printf("============================================================================")
 			log.Printf("✅ Задача по созданию топика, успешно выполнена!")
+			log.Printf("============================================================================")
+		}
+	}
+
+	if *changeTopicFile != "" {
+		if err := cmd.TopicChange(*changeTopicFile); err != nil {
+			log.Printf("Ошибка при изменении топика: %v", err)
+		}
+	}
+
+	if *topicDelete != "" {
+		// Удаление одного топика
+		if err := cmd.TopicDelete(*topicDelete, ""); err != nil {
+			log.Printf("Ошибка при удалении топика: %v", err)
+		} else {
+			log.Printf("============================================================================")
+			log.Printf("✅ Задача по удалению топика, успешно выполнена!")
+			log.Printf("============================================================================")
+		}
+	}
+
+	if *topicDeleteFile != "" {
+		if err := cmd.TopicDelete("", *topicDeleteFile); err != nil {
+			log.Printf("Ошибка при удалении топиков из файла: %v", err)
+		} else {
+			log.Printf("============================================================================")
+			log.Printf("✅ Задача по удалению топиков из файла, успешно выполнена!")
 			log.Printf("============================================================================")
 		}
 	}

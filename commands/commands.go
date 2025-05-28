@@ -580,6 +580,161 @@ func (c *Topic) topicCreate(filePath string) error {
 	return nil
 }
 
+func (c *Topic) topicDelete(topicName string, topics []string) error {
+	// Получаем параметры из конфига
+	brokerSlice := viper.GetStringSlice("kafka.broker")
+	var broker string
+	if len(brokerSlice) > 0 {
+		broker = brokerSlice[0]
+	} else {
+		return fmt.Errorf("список брокеров пуст")
+	}
+
+	securityProtocol := viper.GetString("kafka.sasl.securityProtocol")
+	saslMechanism := viper.GetString("kafka.sasl.mechanism")
+	saslUsername := viper.GetString("kafka.sasl.username")
+	saslPassword := viper.GetString("kafka.sasl.password")
+
+	config := fmt.Sprintf(`
+	security.protocol=%s
+	sasl.mechanism=%s
+	sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, securityProtocol, saslMechanism, saslUsername, saslPassword)
+
+	if topicName != "" {
+		// удаляем топик
+		commandStr := fmt.Sprintf(`
+			echo '%s' > /tmp/config.properties && \
+			kafka-topics.sh --delete --topic %s \
+			--bootstrap-server %s \
+			--command-config /tmp/config.properties && \
+			rm /tmp/config.properties`,
+			config, topicName, broker)
+
+		// Выполняем команду
+		cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr // Выводим только ошибки инструментов кафки
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("ошибка удаления топика %s: %v", topicName, err)
+		}
+		return nil
+	}
+	if len(topics) > 0 {
+		for _, topic := range topics {
+			commandStr := fmt.Sprintf(`
+				echo '%s' > /tmp/config.properties && \
+				kafka-topics.sh --delete --topic %s \
+				--bootstrap-server %s \
+				--command-config /tmp/config.properties && \
+				rm /tmp/config.properties`,
+				config, topic, broker)
+
+			// Выполняем команду
+			cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr // Выводим только ошибки инструментов кафки
+
+			if err := cmd.Run(); err != nil {
+				// log.Printf("ошибка удаления топика %s: %v", topic, err)
+				continue
+			}
+			log.Printf("Топик %s успешно удален", topic)
+		}
+	}
+	return nil
+}
+
+func (c *Topic) topicChange(filePath string) error {
+	// Чтение YAML файла
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Ошибка чтения файла %s: %v", filePath, err)
+		return err
+	}
+
+	// Парсинг YAML в карту
+	var values map[string]map[string]map[string]interface{}
+	err = yaml.Unmarshal(data, &values)
+	if err != nil {
+		log.Printf("Ошибка парсинга YAML файла: %v", err)
+		return err
+	}
+
+	// Проверка наличия секции "topics"
+	topicsConfig, exists := values["topics"]
+	if !exists {
+		return fmt.Errorf("отсутствует секция 'topics'")
+	}
+
+	// Получаем параметры из конфига
+	brokerSlice := viper.GetStringSlice("kafka.broker")
+	var broker string
+	if len(brokerSlice) > 0 {
+		broker = brokerSlice[0]
+	} else {
+		return fmt.Errorf("список брокеров пуст")
+	}
+
+	securityProtocol := viper.GetString("kafka.sasl.securityProtocol")
+	saslMechanism := viper.GetString("kafka.sasl.mechanism")
+	saslUsername := viper.GetString("kafka.sasl.username")
+	saslPassword := viper.GetString("kafka.sasl.password")
+
+	config := fmt.Sprintf(`
+	security.protocol=%s
+	sasl.mechanism=%s
+	sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="%s" password="%s";`, securityProtocol, saslMechanism, saslUsername, saslPassword)
+
+	// Создаем топики
+	// var createErrors []string
+	for topicName, params := range topicsConfig {
+		var configParams []string
+		// var partitions, replicas string
+
+		// Обработка параметров
+		for key, value := range params {
+			strValue := fmt.Sprintf("%v", value)
+			if key == "partitions" || key == "replicas" {
+				continue
+			}
+			configParams = append(configParams, fmt.Sprintf("%s=%s", key, strValue))
+		}
+
+		// Формируем дополнительные параметры конфигурации идущие через --add-config
+		var command string
+		if len(configParams) > 0 {
+			for _, param := range configParams {
+				command += fmt.Sprintf("%s,", param)
+			}
+		}
+
+		// Формируем команду
+		commandStr := fmt.Sprintf(`
+			echo '%s' > /tmp/config.properties && \
+			kafka-configs.sh --bootstrap-server %s \
+			--entity-type topics \
+			--entity-name %s \
+			--alter \
+			--add-config %s \
+			--command-config /tmp/config.properties && \
+			rm /tmp/config.properties`,
+			config, broker, topicName, command)
+
+		// Выполняем команду
+		cmd := exec.Command("docker", "exec", "kafka", "bash", "-c", commandStr)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr // Выводим только ошибки инструментов кафки
+
+		if err := cmd.Run(); err != nil {
+			// log.Printf("Ошибка при изменении топика %s: %v", topicName, err)
+			continue // Продолжаем со следующим топиком
+		}
+		log.Printf("Топик %s успешно обновлен", topicName)
+	}
+	return nil
+}
+
 type Broker struct{}
 
 // func (b *Broker) brokerList(client sarama.Client) ([]int32, error) {
@@ -941,6 +1096,41 @@ func (c *CommandsKafka) TopicRollbackReassignPart() error {
 func (c *CommandsKafka) TopicCreate(filePath string) error {
 	if err := c.topic.topicCreate(filePath); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (c *CommandsKafka) TopicChange(filePath string) error {
+	if err := c.topic.topicChange(filePath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *CommandsKafka) TopicDelete(topicName, topicFile string) error {
+	if topicFile != "" {
+		// Читаем топики из файла
+		content, err := os.ReadFile(topicFile)
+		if err != nil {
+			return fmt.Errorf("ошибка чтения файла с топиками: %v", err)
+		}
+		// Разбиваем на строки и фильтруем пустые
+		lines := strings.Split(string(content), "\n")
+		var topics []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" {
+				topics = append(topics, trimmed)
+			}
+		}
+		if err := c.topic.topicDelete(topicName, topics); err != nil {
+			return err
+		}
+	}
+	if topicName != "" {
+		if err := c.topic.topicDelete(topicName, nil); err != nil {
+			return err
+		}
 	}
 	return nil
 }
